@@ -92,17 +92,20 @@ chmod 640 "$SQL_MOD_FILE"
 echo "=== เปิดใช้ SQL ใน sites-available/default และ inner-tunnel ==="
 pause
 for SITE in /etc/freeradius/3.0/sites-available/{default,inner-tunnel}; do
-  if [[ -f "$SITE" ]]; then
-    chown freerad:freerad "$SITE"
-    chmod 640 "$SITE"
-    for section in authorize accounting session post-auth; do
-      if ! awk "/^$section\s*{/,/}/ { if (\$1 == \"sql\") found=1 } END { exit !found }" "$SITE"; then
-        sed -ri "/^$section\s*{/,/}/ { /{/{n; a\\\ \ \ \ sql
-        } }" "$SITE"
-      fi
-    done
-  fi
+  [ -f "$SITE" ] || continue
+  sudo chown freerad:freerad "$SITE"
+  sudo chmod 640 "$SITE"
+
+  for section in authorize accounting session post-auth; do
+    # ถ้ายังไม่มี 'sql' ภายในบล็อกของ section นั้น ให้แทรกเพิ่มหลังบรรทัดเปิด {
+    if ! awk "/^${section}[[:space:]]*\\{/,/^\\}/ { if (\$1 == \"sql\") found=1 } END { exit !found }" "$SITE"; then
+      sudo sed -E -i "/^${section}[[:space:]]*\\{/{n; i\\        sql
+}" "$SITE"
+    fi
+  done
 done
+
+ln -sf /etc/freeradius/3.0/mods-available/sql /etc/freeradius/3.0/mods-enabled/sql
 
 echo "=== เพิ่ม/อัปเดต client all ใน clients.conf ด้วย RADIUS secret ที่กำหนด ==="
 pause
@@ -190,6 +193,8 @@ pause
 systemctl enable --now freeradius
 systemctl restart freeradius
 
+pause
+radtest "$ADMIN_USER" "$ADMIN_PASS" 127.0.0.1 0 "$RADIUS_SECRET"
 pause
 
 echo "=== เสร็จสิ้น! FreeRADIUS พร้อมใช้งานผ่าน MariaDB แล้ว ==="
